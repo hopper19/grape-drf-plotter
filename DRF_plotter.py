@@ -1,7 +1,20 @@
+# Plot Dopplergram from 8kHz bandwidth DRF data
+# Author: Cuong Nguyen KC3UAX
+
+# IN ORDER OF IMPORTANCE
+# TODO: test with gapped data
+# TODO: optimize memory usage. Method: read one channel each, plot that ax, and repeat,
+#                                       instead of reading all three at once
+# TODO: ability to select which center frequency to plot
+# TODO: determine where in the data pipeline to apply zero cal (on the Pi during conversion to DRF, on the server during plotting)
+
 import os
+import pytz
 import digital_rf
 import sys
-import threading
+import math
+import pickle
+import datetime
 import numpy as np
 import pandas as pd
 from scipy import signal
@@ -17,99 +30,150 @@ mpl.rcParams['grid.linestyle'] = ':'
 mpl.rcParams['figure.figsize'] = np.array([15, 8])
 mpl.rcParams['axes.xmargin']   = 0
 
-def drf_read_segment(dro, start_sample, nsamps):
-    return dro.read_vector(start_sample, nsamps, 'ch0')
-
-def drf_read_segment_2(dro, start_sample, end_sample):
-    return dro.read(start_sample, end_sample, 'ch0')
-
+def get_readers():
+    args = sys.argv[1:]
+    datadir = args[0]
+    metadir = os.path.join(datadir, 'ch0', "metadata")
+    dro = digital_rf.DigitalRFReader(datadir)
+    dmr = digital_rf.DigitalMetadataReader(metadir)
+    return dro, dmr
 
 def main():
-    args = sys.argv[1:]
-    Sdrf_dir = args[0]
-    data_date = args[1]
-    datadir = os.path.join(Sdrf_dir, f'OBS{data_date}T00-00')
-    metadir = os.path.join(datadir, 'ch0', 'metadata')
-    dro = digital_rf.DigitalRFReader(datadir)
-    
-    start_index, end_index = dro.get_bounds('ch0')
-    print(f'Start index: {start_index}\nEnd index:   {end_index}')
-    cont_data_arr = dro.get_continuous_blocks(start_index, end_index, 'ch0')
-    print(
-        (
-            'The following is a OrderedDict of all continuous block of data in'
-            '(start_sample, length) format: %s'
-        )
-        % (str(cont_data_arr))
+    # POSSIBLE OBJECT PARAMS
+
+    # how many mins of data to read per iterations
+    # higher is more efficient
+    # do NOT increase past 60
+    batch_size_mins = 30
+
+    # subdir to store the plots
+    output_subdir = 'g2plots'
+
+    dro, dmr = get_readers()
+    start_index, end_index = dro.get_bounds("ch0")
+
+    rf_dict = dro.get_properties('ch0', sample=start_index)
+    utc_date = datetime.datetime.fromtimestamp(
+        rf_dict["init_utc_timestamp"], tz=pytz.utc
+    ).date()
+    print('Data Date:', utc_date)
+
+    latest_meta = dmr.read_latest()
+    latest_inx = list(latest_meta.keys())[0]
+    center_frequencies = latest_meta[latest_inx]["center_frequencies"]
+    station = latest_meta[latest_inx]["callsign"]
+    fs = int(dmr.get_samples_per_second())
+    print("Sampling rate:", fs)
+    print("Center frequencies:", center_frequencies)
+    print("Station:", station)
+
+    event_fname = f'{utc_date}_{station}_{output_subdir}'
+    png_fname = event_fname + '.png'
+    output_dir = os.path.join('output', output_subdir)
+    png_fpath = os.path.join(output_dir, png_fname)
+    ba_fpath = os.path.join(output_dir, event_fname + '.ba.pkl')
+
+    if not os.path.exists(ba_fpath):
+        cont_data_arr = dro.get_continuous_blocks(start_index, end_index, 'ch0')
+        # print(f'Number of continuous blocks: {len(cont_data_arr)}')
+
+        batch_size_samples = fs*60*batch_size_mins   # batch size in number of samples
+        read_iters = math.ceil((end_index - start_index) / batch_size_samples)
+
+        print(f'Reading DRF data... (batch size = {batch_size_mins} mins)')    
+        result = pd.DataFrame()
+        start_sample = list(cont_data_arr.keys())[0]
+        for i in tqdm(range(read_iters)):
+            batch = dro.read_vector(start_sample, batch_size_samples, "ch0")
+            result = pd.concat([result, pd.DataFrame(batch)])
+            start_sample += batch_size_samples
+
+        print("Loaded data successfully!")
+        with open(ba_fpath,'wb') as fl:
+            pickle.dump(result,fl)
+    else:
+        print('Using cached file {!s}...'.format(ba_fpath))
+        with open(ba_fpath,'rb') as fl:
+            result = pickle.load(fl)        
+
+    print(f'Now plotting {event_fname}...')
+
+    ncols       = 1
+    nrows       = len(center_frequencies)
+    ax_inx      = 0
+    fig = plt.figure(figsize=(15, 4 * nrows))
+    cmap = mpl.colors.LinearSegmentedColormap.from_list(
+        " ", ["black", "darkgreen", "green", "yellow", "red"]
     )
-    
-    # nsamps = end_index - start_index
-    
-    # nsamps = 28800000
-    nsamps = 14400000
-    start_sample = list(cont_data_arr.keys())[0]
-    # for subchannel in range(3):
-    #     print("Reading vector", subchannel)
-    #     result = dro.read_vector(start_sample, nsamps, 'ch0')
-    #     df = pd.DataFrame(result)
-    #     print(df)
-    #     # print(result)
-    #     print(
-    #         'got %i samples starting at sample %i'
-    #         % (len(result), start_sample)
-    #     )
-    #     start_sample += nsamps
-    
-    
-    df = pd.DataFrame()
-    end_hour = 25
-    while start_sample < end_index and end_hour > (start_sample-start_index)/8000/3600:
-        print(f"At hour {(start_sample-start_index)/8000/3600}")
-        result = dro.read_vector(start_sample, nsamps, 'ch0')
-        df = pd.concat([df, pd.DataFrame(result)])
-        start_sample += nsamps
-        print(df.shape)
-    
-    # t1 = threading.Thread(target=drf_read_segment, args=(dro, 13700275200000, 1000000))
-    # t2 = threading.Thread(target=drf_read_segment, args=(dro, 13700375200000, 1000000))
-    # t3 = threading.Thread(target=drf_read_segment, args=(dro, 13700475200000, 1000000))
-    
-    # t1 = threading.Thread(target=drf_read_segment_2, args=(dro, 13700275200000, 13700276200000))
-    # t2 = threading.Thread(target=drf_read_segment_2, args=(dro, 13700375200000, 13700376200000))
-    # t3 = threading.Thread(target=drf_read_segment_2, args=(dro, 13700475200000, 13700476200000))
-    
-    # t1.start()
-    # t2.start()
-    # t3.start()
-    
-    # t1.join()
-    # t2.join()
-    # t3.join()
-    
-    
-    fs = 8000
-    radio_index = 2
-    f, t_spec, Sxx = signal.spectrogram(df[radio_index],fs=fs,window='hann',nperseg=int(fs/0.01))
-    Sxx_db = 10*np.log10(Sxx)
-    
-    flim = (990,1010)
-    fig = plt.figure(figsize=(20,6))
-    ax  = fig.add_subplot(1,1,1)
-    mpbl = ax.pcolormesh(t_spec,f,Sxx_db)
-    cbar = fig.colorbar(mpbl,label='PSD [dB]')
-    # ax.set_title(dir_path+"_R"+str(radio_index+1))
-    ax.set_xlabel('t [s]')
-    ax.set_ylabel('Frequency [Hz]')
-    ax.set_ylim(flim)
-    fig.savefig('Generated_Plots/grape_spectrogram.png',bbox_inches='tight')
-    
+    def plot_ax(cfreq_idx, ax):
+        ylabel = []
+        ylabel.append("Doppler Shift (Hz)")
+        ax.set_ylabel("\n".join(ylabel))
+        ax.set_xlabel("UTC")
+
+        f, t_spec, Sxx = signal.spectrogram(
+            result[cfreq_idx], fs=fs, nfft=1024, window="hann"
+        )
+        print(len(t_spec))
+        # ts_vec = np.linspace(rf_dict["init_utc_timestamp"], rf_dict['init_utc_timestamp']+end_index-start_index, len(t_spec))
+        # spectrum_timevec = [datetime.datetime.fromtimestamp(x) for x in ts_vec]
+
+        spectrum_timevec = [
+            datetime.datetime.fromtimestamp(x)
+            for x in np.linspace(
+                rf_dict["init_utc_timestamp"],
+                rf_dict["init_utc_timestamp"] + end_index - start_index,
+                len(t_spec),
+            )
+        ]
+
+        # f = (np.fft.fftshift(f)).astype("float64")  # Frequency needs to be in float64 for some reason...
+        f = np.fft.fftshift(f)
+        Sxx = np.fft.fftshift(Sxx, axes=0)
+        print('ghot here')
+        Sxx_db = 10 * np.log10(Sxx)
+        mpbl = ax.pcolormesh(spectrum_timevec, f, Sxx_db, cmap=cmap)
+        # cbar = fig.colorbar(mpbl, label="PSD [dB]")
+
+        xticks = ax.get_xticks()
+        xtkls = []
+        for xtk in xticks:
+            dt = mpl.dates.num2date(xtk)
+            xtkl = dt.strftime("%H:%M")
+            xtkls.append(xtkl)
+        ax.set_xticks(xticks)
+        ax.set_xticklabels(xtkls)
+
+    for cfreq_idx, cfreq in enumerate(center_frequencies):
+        print('   {!s} MHz...'.format(cfreq))
+        ax_inx      += 1
+        ax          = fig.add_subplot(nrows,ncols,ax_inx)
+        plot_ax(cfreq_idx,ax)
+    fig.tight_layout()
+    fig.savefig(png_fpath, bbox_inches="tight")
+    print(png_fpath)
+    # radio_index = 0
+    # f, t_spec, Sxx = signal.spectrogram(result[radio_index],fs=fs,window='hann',nperseg=int(fs/0.01))
+    # Sxx_db = 10*np.log10(Sxx)
+
+    # flim = (990,1010)
+    # fig = plt.figure(figsize=(20,6))
+    # ax  = fig.add_subplot(1,1,1)
+    # mpbl = ax.pcolormesh(t_spec,f,Sxx_db)
+    # cbar = fig.colorbar(mpbl,label='PSD [dB]')
+    # # ax.set_title(dir_path+"_R"+str(radio_index+1))
+    # ax.set_xlabel('t [s]')
+    # ax.set_ylabel('Frequency [Hz]')
+    # ax.set_ylim(flim)
+    # fig.savefig('plots/grape_spectrogram.png',bbox_inches='tight')
+
 # def plot_figure(df):
 #     print('Now plotting...')
 #     cfreqs = [5, 10, 15]
 
 #     ncols       = 1
 #     nrows       = len(cfreqs)
-    
+
 #     ax_inx      = 0
 #     fig         = plt.figure(figsize=(15,4*nrows))
 #     for cfreq_idx, cfreq in enumerate(cfreqs):
@@ -117,19 +181,17 @@ def main():
 #         ax_inx      += 1
 #         ax          = fig.add_subplot(nrows,ncols,ax_inx)
 #         plot_ax(df, cfreq_idx, cfreq,ax)
-        
+
 # def plot_ax(result, cfreq_idx, cfreq, ax, cmap=None,plot_colorbar=False,xlim=None):
 #     ylabel  = []
 # #        ylabel.append('{!s} MHz'.format(cfreq))
 #     ylabel.append('Doppler Shift (Hz)')
 #     ax.set_ylabel('\n'.join(ylabel))
 #     ax.set_xlabel('UTC')
-    
+
 #     f, t_spec, Sxx  = signal.spectrogram(result[cfreq_idx],fs=8000,nfft=1024,window='hann',return_onesided=False)
-    
-    
-    
-        
+
+
 # def plot_ax(cfreq,ax,cmap=None,plot_colorbar=False,xlim=None):
 
 #     sDate   = self.sDate
@@ -181,7 +243,7 @@ def main():
 
 #     if xlim is None:
 #         xlim = (sDate,eDate)
-        
+
 #     # TODO: hardcode for now only
 #     # ax.set_ylim(-5, 5)
 
@@ -198,4 +260,5 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as e:
+        print('Program failed SPECTACULARLY!!!')
         print(str(e))
