@@ -10,7 +10,7 @@
 
 import os
 import pytz
-import digital_rf
+import digital_rf as drf
 import sys
 import math
 import pickle
@@ -34,8 +34,8 @@ def get_readers():
     args = sys.argv[1:]
     datadir = args[0]
     metadir = os.path.join(datadir, 'ch0', "metadata")
-    dro = digital_rf.DigitalRFReader(datadir)
-    dmr = digital_rf.DigitalMetadataReader(metadir)
+    dro = drf.DigitalRFReader(datadir)
+    dmr = drf.DigitalMetadataReader(metadir)
     return dro, dmr
 
 def main():
@@ -53,6 +53,7 @@ def main():
     start_index, end_index = dro.get_bounds("ch0")
 
     rf_dict = dro.get_properties('ch0', sample=start_index)
+    print(rf_dict)
     utc_date = datetime.datetime.fromtimestamp(
         rf_dict["init_utc_timestamp"], tz=pytz.utc
     ).date()
@@ -118,14 +119,29 @@ def main():
         # ts_vec = np.linspace(rf_dict["init_utc_timestamp"], rf_dict['init_utc_timestamp']+end_index-start_index, len(t_spec))
         # spectrum_timevec = [datetime.datetime.fromtimestamp(x) for x in ts_vec]
 
-        spectrum_timevec = [
-            datetime.datetime.fromtimestamp(x)
-            for x in np.linspace(
+        # print(t_spec[0], t_spec[-1])
+        # print(
+        #     rf_dict["init_utc_timestamp"],
+        #     rf_dict["init_utc_timestamp"] + (end_index - start_index + 1) / fs,
+        # )
+        spectrum_timevec = pd.to_datetime(
+            np.linspace(
                 rf_dict["init_utc_timestamp"],
-                rf_dict["init_utc_timestamp"] + end_index - start_index,
+                rf_dict["init_utc_timestamp"] + (end_index - start_index + 1) / fs,
                 len(t_spec),
-            )
-        ]
+            ),
+            unit='s'
+        )
+        # print(spectrum_timevec[0], spectrum_timevec[-1])
+        # spectrum_timevec = [
+        #     datetime.datetime.fromtimestamp(x)
+        #     for x in np.linspace(
+        #         rf_dict["init_utc_timestamp"],
+        #         rf_dict["init_utc_timestamp"] + (end_index-start_index+1)/fs,
+        #         len(t_spec),
+        #     )
+        # ]
+        # print(spectrum_timevec[0], spectrum_timevec[-1])
 
         # f = (np.fft.fftshift(f)).astype("float64")  # Frequency needs to be in float64 for some reason...
         f = np.fft.fftshift(f)
