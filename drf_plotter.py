@@ -9,6 +9,7 @@
 # TODO: determine where in the data pipeline to apply zero cal (on the Pi during conversion to DRF, on the server during plotting)
 
 import os
+import gc
 import pytz
 import digital_rf as drf
 import sys
@@ -115,15 +116,6 @@ def main():
         f, t_spec, Sxx = signal.spectrogram(
             result[cfreq_idx], fs=fs, nfft=1024, window="hann"
         )
-        print(len(t_spec))
-        # ts_vec = np.linspace(rf_dict["init_utc_timestamp"], rf_dict['init_utc_timestamp']+end_index-start_index, len(t_spec))
-        # spectrum_timevec = [datetime.datetime.fromtimestamp(x) for x in ts_vec]
-
-        # print(t_spec[0], t_spec[-1])
-        # print(
-        #     rf_dict["init_utc_timestamp"],
-        #     rf_dict["init_utc_timestamp"] + (end_index - start_index + 1) / fs,
-        # )
         spectrum_timevec = pd.to_datetime(
             np.linspace(
                 rf_dict["init_utc_timestamp"],
@@ -132,23 +124,14 @@ def main():
             ),
             unit='s'
         )
-        # print(spectrum_timevec[0], spectrum_timevec[-1])
-        # spectrum_timevec = [
-        #     datetime.datetime.fromtimestamp(x)
-        #     for x in np.linspace(
-        #         rf_dict["init_utc_timestamp"],
-        #         rf_dict["init_utc_timestamp"] + (end_index-start_index+1)/fs,
-        #         len(t_spec),
-        #     )
-        # ]
-        # print(spectrum_timevec[0], spectrum_timevec[-1])
 
         # f = (np.fft.fftshift(f)).astype("float64")  # Frequency needs to be in float64 for some reason...
         f = np.fft.fftshift(f)
         Sxx = np.fft.fftshift(Sxx, axes=0)
         print('ghot here')
-        Sxx_db = 10 * np.log10(Sxx)
+        Sxx_db = 10 * np.log10(Sxx, where=(Sxx>0))
         del Sxx, t_spec
+        gc.collect()
         mpbl = ax.pcolormesh(spectrum_timevec, f, Sxx_db, cmap=cmap)
         # cbar = fig.colorbar(mpbl, label="PSD [dB]")
 
