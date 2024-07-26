@@ -47,7 +47,7 @@ def main():
     batch_size_mins = 30
 
     # subdir to store the plots
-    output_subdir = 'g2plots'
+    output_subdir = 'grape2DRF'
 
     dro, dmr = get_readers()
     start_index, end_index = dro.get_bounds("ch0")
