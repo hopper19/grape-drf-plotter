@@ -148,6 +148,7 @@ def main():
         Sxx = np.fft.fftshift(Sxx, axes=0)
         print('ghot here')
         Sxx_db = 10 * np.log10(Sxx)
+        del Sxx, t_spec
         mpbl = ax.pcolormesh(spectrum_timevec, f, Sxx_db, cmap=cmap)
         # cbar = fig.colorbar(mpbl, label="PSD [dB]")
 
