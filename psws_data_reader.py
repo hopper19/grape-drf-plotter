@@ -144,3 +144,10 @@ class PSWSDataReader:
             "station": self.station,
             "utc_date": self.utc_date,
         }
+
+if __name__ == "__main__":
+    data_dir = sys.argv[1]
+    cache_dir = 'cache'
+    data_reader = PSWSDataReader(data_dir, cachedir=cache_dir, resampled_fs=2000) 
+    for i in range(3): 
+        data_reader.read_data(i)
