@@ -105,12 +105,12 @@ def main():
 
     # data_dir = sys.argv[1]
     # cache_dir = sys.argv[3]
-    data_dir = 'D:\GitHub\GrapeDRFPlotting\data\psws_grape2DRF\w2naf'
+    data_dir = sys.argv[1]
     cache_dir = 'cache'
-    data_reader = DataReader(data_dir, cachedir=cache_dir)
+    data_reader = DataReader(data_dir, cachedir=cache_dir, resampled_fs=8000)
 
     # output_dir = sys.argv[2]
-    output_dir = 'output\grape2DRF'
+    output_dir = 'output/grape2DRF'
     plotter = Plotter(data_reader, output_dir=output_dir)
     plotter.plot_spectrogram()
 
