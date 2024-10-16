@@ -93,6 +93,10 @@ class PSWSDataReader:
         """Load data from cache or resample it if needed."""
         resampled_path = self._get_cache_file_path(channel, resampled=True)
 
+        if self.fs == self.resampled_fs:
+            logging.info(f"Resampling not needed. Using raw data: {cache_path}")
+            return self._load_pickle(cache_path)
+
         if os.path.exists(resampled_path):
             logging.info(f"Using cached resampled file: {resampled_path}")
             return self._load_pickle(resampled_path)

@@ -57,7 +57,7 @@ class Plotter:
         ylabel = "Doppler Shift (Hz)"
         ax.set_ylabel(ylabel)
         ax.set_xlabel("UTC")
-        ax.set_ylim(995, 1005)
+        # ax.set_ylim(995, 1005)
 
         # Generate spectrogram
         number = 2**14
@@ -107,7 +107,7 @@ def main():
     # cache_dir = sys.argv[3]
     data_dir = sys.argv[1]
     cache_dir = 'cache'
-    data_reader = DataReader(data_dir, cachedir=cache_dir, resampled_fs=8000)
+    data_reader = DataReader(data_dir, cachedir=cache_dir, resampled_fs=4000)
 
     # output_dir = sys.argv[2]
     output_dir = 'output/grape2DRF'
