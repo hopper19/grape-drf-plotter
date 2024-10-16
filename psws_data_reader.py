@@ -12,7 +12,7 @@ from scipy import signal
 
 
 class PSWSDataReader:
-    def __init__(self, datadir, cachedir=None, resampled_fs=10, batch_size_mins=30):
+    def __init__(self, datadir, cachedir=None, resampled_fs=2000, batch_size_mins=30):
         self.datadir = datadir
         self.cachedir = cachedir
         if self.cachedir and not os.path.exists(self.cachedir):
@@ -73,15 +73,6 @@ class PSWSDataReader:
                         pickle.dump(result,fl)
                         print("Cached data!")
             else:
-                print('Using cached file {!s}...'.format(ba_fpath))
-                with open(ba_fpath,'rb') as fl:
-                    result = pickle.load(fl)
-                # print(result.shape)
-                # print("decimating")
-                decimation_factor = int(self.fs / self.resampled_fs)
-                resampled_signal = signal.decimate(
-                    result, decimation_factor, ftype="fir", zero_phase=True
-                )
                 resampled_cache_path = os.path.join(
                     self.cachedir,
                     self.utc_date.strftime("%Y-%m-%d")
@@ -93,10 +84,27 @@ class PSWSDataReader:
                     + str(channel)
                     + ".ba.pkl",
                 )
-                if not os.path.exists(resampled_cache_path):
+                if os.path.exists(resampled_cache_path):
+                    with open(resampled_cache_path, "rb") as fl:
+                        result = pickle.load(fl)
+                else:
+                    print('Using cached file {!s}...'.format(ba_fpath))
+                    with open(ba_fpath,'rb') as fl:
+                        result = pickle.load(fl)
+                        
+                        
+                    decimation_factor = int(self.fs / self.resampled_fs)
+                    resampled_signal = signal.decimate(
+                        result, decimation_factor, ftype="fir", zero_phase=True
+                    )
+                    
+                    
                     with open(resampled_cache_path, "wb") as fl:
                         pickle.dump(resampled_signal, fl)
-                print(resampled_signal.shape)
+                    print(resampled_signal.shape)
+                    result = resampled_signal
+                # print(result.shape)
+                # print("decimating")
 
         else:
             cont_data_arr = self.dro.get_continuous_blocks(

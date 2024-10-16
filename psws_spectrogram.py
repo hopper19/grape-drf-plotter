@@ -14,7 +14,7 @@ class Plotter:
     def __init__(self, data_reader, output_dir="output"):
         self.data_reader = data_reader
         self.metadata = data_reader.get_metadata()
-        self.fs = self.data_reader.fs
+        self.fs = self.data_reader.resampled_fs
         self.center_frequencies = self.metadata["center_frequencies"]
         self.station = self.metadata["station"]
         self.utc_date = self.metadata["utc_date"]
@@ -62,7 +62,7 @@ class Plotter:
         # Generate spectrogram
         number = 2**14
         f, t_spec, Sxx = signal.spectrogram(
-            data_channel, fs=self.fs, nperseg=number, window="hann"
+            data_channel, fs=self.fs, nfft=1024, window="hann"
         )
         # spectrum_timevec = pd.to_datetime(
         #     np.linspace(
