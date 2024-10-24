@@ -1,3 +1,7 @@
+# A short program, not full featured but operational for plotting DigitalRF data
+# Author: Cuong Nguyen
+
+# TODO: marked for archive
 import os
 import digital_rf
 import numpy as np
