@@ -41,7 +41,13 @@ class Plotter:
 
         ncols = 1
         nrows = len(channels)
-        fig = plt.figure(figsize=(10, 2 * nrows))
+        fig = plt.figure(figsize=(10, 4 * nrows))
+
+        fig.suptitle(
+            f"Grape Narrow Spectrum, {self.utc_date},\n" +
+            f"Lat. {self.metadata['lat']}, Long. {self.metadata['lon']} (Grid{self.metadata['grid']}) " +
+            f"Station: {self.metadata['station']}", fontsize=16
+        )
 
         for ax_inx, cfreq_idx in enumerate(channels, start=1):
             data = self.data_reader.read_data(channel_index=cfreq_idx)
@@ -49,7 +55,9 @@ class Plotter:
             ax = fig.add_subplot(nrows, ncols, ax_inx)
             self._plot_ax(
                 data,
-                ax
+                ax,
+                freq=self.center_frequencies[cfreq_idx],
+                lastrow=ax_inx == len(channels),
             )
 
         plt.xlabel("UTC")
@@ -61,13 +69,13 @@ class Plotter:
         # Save the figure
         event_fname = f"{self.utc_date}_{self.station}_grape2DRF_new.png"
         png_fpath = os.path.join(self.output_dir, event_fname)
-        fig.savefig(png_fpath, bbox_inches="tight")
+        fig.savefig(png_fpath)
         print(f"Plot saved to {png_fpath}")
 
-    def _plot_ax(self, data, ax):
+    def _plot_ax(self, data, ax, freq, lastrow=False):
         """Plot data on the given axes."""
 
-        ax.set_ylabel("Doppler Shift (Hz)")
+        ax.set_ylabel("{:.2f}MHz\nDoppler Shift (Hz)".format(freq))
 
         f, t_spec, Sxx = signal.spectrogram(
             data, fs=self.fs, window="hann", nperseg=int(self.fs / 0.01)
@@ -79,17 +87,23 @@ class Plotter:
         )
         ax.pcolormesh(t_spec, f, Sxx_db, cmap=self.cmap)
         ax.set_xticks([])
+        ax.set_xticklabels([])
 
+        ax.grid(
+            visible=True,
+            which="both",
+        )
         # Set dynamic x-tick labels
-        # num_ticks = 13 # number of x-ticks
-        # positions = np.linspace(t_spec[0], t_spec[-1], num=num_ticks)
-        # labels = [f"{(i * 24 / (num_ticks - 1)):.1f}h" for i in range(num_ticks)] # TODO: hard coded for 24 hours
-        # ax.set_xticks(positions)
-        # ax.set_xticklabels(labels)
+        num_ticks = 13 # number of x-ticks
+        positions = np.linspace(t_spec[0], t_spec[-1], num=num_ticks)
+        labels = [f"{(i * 24 / (num_ticks - 1)):0.0f}" for i in range(num_ticks)] # TODO: hard coded for 24 hours
+        ax.set_xticks(positions)
+        ax.set_xticklabels(labels)
 
 
 def main():
-    data_dir = "/home/cuong/drive/GRAPE2-SFTP/w2naf"
+    # data_dir = "/home/cuong/drive/GRAPE2-SFTP/w2naf"
+    data_dir = "/home/cuong/drive/GRAPE2-SFTP/grape2/AB1XB/Sdrf/OBS2024-04-08T00-00"
     output_dir = 'output'
 
     data_reader = Reader(data_dir)
