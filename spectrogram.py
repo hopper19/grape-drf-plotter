@@ -29,8 +29,8 @@ class Plotter:
             " ", ["black", "darkgreen", "green", "yellow", "red"]
         )
         plt.style.use("classic")
-        plt.tight_layout()
-        plt.grid()
+        # plt.tight_layout()
+        # plt.grid()
 
     def plot_spectrogram(self, channels=None):
         """Plot selected channels or all if not specified."""
@@ -42,7 +42,7 @@ class Plotter:
         ncols = 1
         nrows = len(channels)
         fig = plt.figure(figsize=(10, 4 * nrows))
-
+        fig.subplots_adjust(top=0.93)
         fig.suptitle(
             f"Grape Narrow Spectrum, {self.utc_date},\n" +
             f"Lat. {self.metadata['lat']}, Long. {self.metadata['lon']} (Grid{self.metadata['grid']}) " +
@@ -69,7 +69,7 @@ class Plotter:
         # Save the figure
         event_fname = f"{self.utc_date}_{self.station}_grape2DRF_new.png"
         png_fpath = os.path.join(self.output_dir, event_fname)
-        fig.savefig(png_fpath)
+        fig.savefig(png_fpath, bbox_inches="tight")
         print(f"Plot saved to {png_fpath}")
 
     def _plot_ax(self, data, ax, freq, lastrow=False):
@@ -102,8 +102,8 @@ class Plotter:
 
 
 def main():
-    # data_dir = "/home/cuong/drive/GRAPE2-SFTP/w2naf"
-    data_dir = "/home/cuong/drive/GRAPE2-SFTP/grape2/AB1XB/Sdrf/OBS2024-04-08T00-00"
+    data_dir = "/home/cuong/drive/GRAPE2-SFTP/w2naf"
+    # data_dir = "/home/cuong/drive/GRAPE2-SFTP/grape2/AB1XB/Sdrf/OBS2024-04-08T00-00"
     output_dir = 'output'
 
     data_reader = Reader(data_dir)
