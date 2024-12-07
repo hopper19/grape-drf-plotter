@@ -25,10 +25,6 @@ class Plotter:
         self.utc_date = self.metadata["utc_date"]
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
-        self.cmap = mpl.colors.LinearSegmentedColormap.from_list(
-            " ", ["black", "darkgreen", "green", "yellow", "red"]
-        )
-        plt.style.use("classic")
         # plt.tight_layout()
         # plt.grid()
 
@@ -42,12 +38,14 @@ class Plotter:
         ncols = 1
         nrows = len(channels)
         fig = plt.figure(figsize=(10, 4 * nrows))
-        fig.subplots_adjust(top=0.93)
+        # fig.subplots_adjust(top=0.93)
         fig.suptitle(
             f"Grape Narrow Spectrum, {self.utc_date},\n" +
             f"Lat. {self.metadata['lat']}, Long. {self.metadata['lon']} (Grid{self.metadata['grid']}) " +
             f"Station: {self.metadata['station']}", fontsize=16
         )
+        # use classic style
+        plt.style.use("classic")
 
         for ax_inx, cfreq_idx in enumerate(channels, start=1):
             data = self.data_reader.read_data(channel_index=cfreq_idx)
@@ -67,6 +65,7 @@ class Plotter:
         # plt.xticks(labels)
 
         # Save the figure
+        fig.tight_layout(rect=[0, 0, 1, 1])  # Leave space for the suptitle
         event_fname = f"{self.utc_date}_{self.station}_grape2DRF_new.png"
         png_fpath = os.path.join(self.output_dir, event_fname)
         fig.savefig(png_fpath, bbox_inches="tight")
@@ -85,7 +84,15 @@ class Plotter:
         ax.set_ylim(
             - self.data_reader.target_bandwidth / 2, self.data_reader.target_bandwidth / 2
         )
-        ax.pcolormesh(t_spec, f, Sxx_db, cmap=self.cmap)
+        cmap = mpl.colors.LinearSegmentedColormap.from_list(
+            " ", ["black", "darkgreen", "green", "yellow", "red"]
+        )
+        cax = ax.pcolormesh(t_spec, f, Sxx_db, cmap=cmap)
+
+        # Add colorbar
+        cbar = plt.colorbar(cax, ax=ax, orientation='vertical', pad=0.02)
+        cbar.set_label("Power (dB)")
+
         ax.set_xticks([])
         ax.set_xticklabels([])
 
@@ -99,6 +106,7 @@ class Plotter:
         labels = [f"{(i * 24 / (num_ticks - 1)):0.0f}" for i in range(num_ticks)] # TODO: hard coded for 24 hours
         ax.set_xticks(positions)
         ax.set_xticklabels(labels)
+
 
 
 def main():
