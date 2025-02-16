@@ -5,6 +5,7 @@ import numpy as np
 from scipy import signal
 import os
 import sys
+import argparse
 from reader import Reader
 
 # mpl.rcParams["font.size"] = 12
@@ -29,6 +30,7 @@ class Plotter:
         # plt.grid()
 
     def plot_spectrogram(self, channels=None):
+        # TODO: implement channel selection 
         """Plot selected channels or all if not specified."""
         if channels is None:
             channels = range(len(self.center_frequencies))
@@ -110,15 +112,33 @@ class Plotter:
 
 
 def main():
-    data_dir = "/home/cuong/drive/GRAPE2-SFTP/w2naf"
-    # data_dir = "/home/cuong/drive/GRAPE2-SFTP/grape2/AB1XB/Sdrf/OBS2024-04-08T00-00"
-    output_dir = 'output'
+    version = "1.0.1"
+    
+    parser = argparse.ArgumentParser(description="Grape2 Spectrogram Generator")
+    parser.add_argument(
+        "-i", "--input_dir", help="Path to the directory containing a ch0 subdirectory", required=True
+    )
+    parser.add_argument(
+        "-o", "--output_dir", help="Output directory for plot", required=True
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s v{version}",
+        help="show program version",
+    )
+    
+    args = parser.parse_args()
+    
+    data_dir = args.input_dir
+    output_dir = args.output_dir
 
     data_reader = Reader(data_dir)
     plotter = Plotter(data_reader, output_dir=output_dir)
 
-    channels = sys.argv[2:] if len(sys.argv) > 2 else None
-    plotter.plot_spectrogram(channels)
+    # channels = sys.argv[2:] if len(sys.argv) > 2 else None
+    plotter.plot_spectrogram()
 
 
 if __name__ == "__main__":
