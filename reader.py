@@ -13,8 +13,10 @@ TODO: Log system resource usage (CPU, memory)
 TODO:
     - Add support for logging
     - Log exceptions
+    - Configure logging level at the command-line 
 TODO: Test with complex DRF input
 TODO: To see if cache directory is automatically removed if the object is destroyed or closed in anyway
+TODO: Get memory profile for the initial run
 """
 """
 Caching is always enabled.
@@ -59,7 +61,7 @@ class Reader:
         self.fs = int(self.dmr.get_samples_per_second())
         self.start_index, self.end_index = self.dro.get_bounds("ch0")
         self.utc_date = self._get_initial_date()
-        self.station, self.node, self.center_frequencies = self._extract_metadata()
+        self.station, self.node, self.center_frequencies,self.lat, self.lon, self.grid = self._extract_metadata()
 
         self.cachedir = cachedir
         os.makedirs(cachedir, exist_ok=True)
@@ -77,10 +79,14 @@ class Reader:
         """Extract metadata such as station, node, and center frequencies."""
         latest_meta = self.dmr.read_latest()
         latest_inx = list(latest_meta.keys())[0]
+        print(latest_meta[latest_inx])
         station = latest_meta[latest_inx]["callsign"]
         node = latest_meta[latest_inx]["station_node_number"]
         center_frequencies = latest_meta[latest_inx]["center_frequencies"]
-        return station, node, center_frequencies
+        lat = latest_meta[latest_inx]["lat"]
+        lon = latest_meta[latest_inx]["long"]
+        grid = latest_meta[latest_inx]["grid_square"]
+        return station, node, center_frequencies, lat, lon, grid
 
     def _cleanup(self):
         """Remove the cache directory if 'remove_cache_on_exit' is True."""
@@ -113,24 +119,33 @@ class Reader:
                     self._get_cache_file_path(channel_index), resampled_data
                 )
 
-    def _read_rawdata_channel(self, channel: int):
-        """ Read raw data for the specified channel. """
-        cont_data_arr = self.dro.get_continuous_blocks(self.start_index, self.end_index, "ch0")
+    def _read_rawdata_channel(self, channel_index: int):
+        """Read raw data and store it using np.memmap to reduce memory usage."""
+        cont_data_arr = self.dro.get_continuous_blocks(
+            self.start_index, self.end_index, "ch0"
+        )
         batch_size_samples = self.fs * 60 * self.batch_size_mins
         read_iters = math.ceil((self.end_index - self.start_index) / batch_size_samples)
 
         start_sample = list(cont_data_arr.keys())[0]
-        batches = (
-            self.dro.read_vector(
+        memmap_file = f"{self.cachedir}/raw_data_channel_{channel_index}.memmap"
+        memmap_array = np.memmap(
+            memmap_file,
+            dtype="float32",
+            mode="w+",
+            shape=(self.end_index - self.start_index + 1,),
+        )
+
+        for i in tqdm(range(read_iters), desc="Reading Batches"):
+            batch = self.dro.read_vector(
                 start_sample + i * batch_size_samples,
                 batch_size_samples,
                 "ch0",
-                channel,
+                channel_index,
             )
-            for i in tqdm(range(read_iters), desc="Reading Batches")
-        )
+            memmap_array[i * batch_size_samples : (i + 1) * batch_size_samples] = batch
 
-        return np.concatenate(list(batches))
+        return memmap_array
 
     def _cache_data(self, path: str, data):
         """Cache the data to a pickle file."""
@@ -148,16 +163,28 @@ class Reader:
         )
 
     def _resample(self, data):
-        t = np.arange(0, self.end_index - self.start_index + 1) / self.fs
-        print(t.shape, data.shape)
-        shifted_signal = data * np.cos(2 * np.pi * int(self.f_c - self.target_bandwidth/2) * t)
+        decimation_factor = math.ceil(self.fs / self.resampled_fs)
+        # Process data in chunks to save memory
+        chunk_size = min(10**6, len(data))  # Adjust chunk size based on your system's memory limits
+        resampled_chunks = []
 
-        decimation_factor = math.ceil(self.fs/self.resampled_fs)
-        resampled_signal = signal.decimate(
-            shifted_signal, decimation_factor, ftype="fir", zero_phase=True
-        )
-        return resampled_signal
-    
+        for i in range(0, len(data), chunk_size):
+            chunk = data[i:i + chunk_size]
+            t_chunk = np.arange(i, i + len(chunk)) / self.fs
+
+            # Use broadcasting to avoid intermediate large arrays
+            cos_wave = np.cos(2 * np.pi * (self.f_c - self.target_bandwidth / 2) * t_chunk)
+            shifted_chunk = chunk * cos_wave
+
+            # Use FIR filter for memory-efficient resampling
+            resampled_chunk = signal.decimate(
+                shifted_chunk, decimation_factor, ftype="fir", zero_phase=True
+            )
+            resampled_chunks.append(resampled_chunk)
+
+        # Concatenate chunks at the end to minimize memory footprint
+        return np.concatenate(resampled_chunks)
+
     def read_data(self, channel_index: int) -> np.ndarray:
         """ Read the cached datata for the specified channel. """
         cache_path = self._get_cache_file_path(channel_index)
@@ -170,6 +197,9 @@ class Reader:
             "center_frequencies": self.center_frequencies,
             "station": self.station,
             "utc_date": self.utc_date,
+            "lat": self.lat,
+            "lon": self.lon,
+            "grid": self.grid
         }
 
 if __name__ == "__main__":

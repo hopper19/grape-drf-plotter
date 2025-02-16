@@ -1,5 +1,12 @@
 *.ba.pkl
 output/
+.venv/
+cache/
+*.png
+*.csv
+*.html
+*.out
+*.bin
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
