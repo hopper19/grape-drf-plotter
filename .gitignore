@@ -1,6 +1,6 @@
 *.ba.pkl
 output/
-.venv/
+.drfenv/
 cache/
 *.png
 *.csv
