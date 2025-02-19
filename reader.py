@@ -17,6 +17,7 @@ TODO:
 TODO: Test with complex DRF input
 TODO: To see if cache directory is automatically removed if the object is destroyed or closed in anyway
 TODO: Get memory profile for the initial run
+TODO: cache command line option
 """
 """
 Caching is always enabled.
