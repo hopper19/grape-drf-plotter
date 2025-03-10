@@ -1,6 +1,7 @@
 *.ba.pkl
 output/
 .drfenv/
+.drfplot/
 cache/
 *.png
 *.csv

@@ -9,7 +9,6 @@ Author: Cuong Nguyen
 TODO: Add support for DRF input of arbitrary sampling rate
 TODO: Add support for specifying number of hours to read
 TODO: Think about metadata (e.g. include in cache or not)
-TODO: Log system resource usage (CPU, memory)
 TODO:
     - Add support for logging
     - Log exceptions
@@ -62,7 +61,8 @@ class Reader:
         self.fs = int(self.dmr.get_samples_per_second())
         self.start_index, self.end_index = self.dro.get_bounds("ch0")
         self.utc_date = self._get_initial_date()
-        self.station, self.node, self.center_frequencies,self.lat, self.lon, self.grid = self._extract_metadata()
+        self.metadata = {}
+        self._extract_metadata()
 
         self.cachedir = cachedir
         os.makedirs(cachedir, exist_ok=True)
@@ -71,23 +71,32 @@ class Reader:
         atexit.register(self._cleanup)
 
     def _get_initial_date(self) -> datetime.date:
-        """Retrieve the initial UTC timestamp and return it as a date."""
+        """Retrieve the initial UTC timestamp and return channel_indexit as a date."""
         rf_properties = self.dro.get_properties("ch0", sample=self.start_index)
         init_timestamp = rf_properties["init_utc_timestamp"]
-        return datetime.datetime.fromtimestamp(init_timestamp, tz=pytz.utc).date()
+        return datetime.datetime.fromtimestamp(init_timestamp, tz=pytz.utc)
 
-    def _extract_metadata(self) -> tuple[str, str, List[float]]:
+    def _extract_metadata(self):
         """Extract metadata such as station, node, and center frequencies."""
-        latest_meta = self.dmr.read_latest()
-        latest_inx = list(latest_meta.keys())[0]
-        print(latest_meta[latest_inx])
-        station = latest_meta[latest_inx]["callsign"]
-        node = latest_meta[latest_inx]["station_node_number"]
-        center_frequencies = latest_meta[latest_inx]["center_frequencies"]
-        lat = latest_meta[latest_inx]["lat"]
-        lon = latest_meta[latest_inx]["long"]
-        grid = latest_meta[latest_inx]["grid_square"]
-        return station, node, center_frequencies, lat, lon, grid
+        try:
+            start_global_index = self.dmr.get_bounds()[0]
+            header_meta = self.dmr.read(start_global_index, start_global_index + 1)[start_global_index]
+            self.metadata = header_meta
+            print(self.metadata)
+            self.metadata.update({
+                "station": header_meta["callsign"],
+                "node": header_meta["station_node_number"],
+                "center_frequencies": header_meta["center_frequencies"],
+                "lat": header_meta["lat"],
+                "lon": header_meta["long"],
+                "grid": header_meta["grid_square"],
+                "sampling_rate": header_meta["ad_sample_rate"],
+                "utc_date": self.utc_date
+            })
+        except Exception as e:
+            error_message = f"Error extracting metadata: {e}"
+            logging.error(error_message)
+            raise ValueError(error_message)
 
     def _cleanup(self):
         """Remove the cache directory if 'remove_cache_on_exit' is True."""
@@ -100,7 +109,7 @@ class Reader:
     def _ensure_data_cached(self):
         """ Ensure that rawdata is resampled and cached."""
         rawdata_cached = True
-        for channel_index in range(len(self.center_frequencies)):
+        for channel_index in range(len(self.metadata["center_frequencies"])):
             if not os.path.exists(self._get_cache_file_path(channel_index)):
                 rawdata_cached = False
                 break
@@ -110,8 +119,8 @@ class Reader:
             log_message = "Rawdata not cached. Caching rawdata..."
             logger.info(log_message)
             print(log_message + " This will take some time. Snacks are not included.")
-            for channel_index in range(len(self.center_frequencies)):
-                log_message = f"Reading DRF rawdata for {self.center_frequencies[channel_index]} MHz channel..."
+            for channel_index in range(len(self.metadata["center_frequencies"])):
+                log_message = f"Reading DRF rawdata for {self.metadata["center_frequencies"][channel_index]} MHz channel..."
                 logger.info(log_message)
                 print(log_message)
                 raw_data = self._read_rawdata_channel(channel_index)
@@ -157,10 +166,10 @@ class Reader:
 
     def _get_cache_file_path(self, channel: int) -> str:
         """Generate the file path for the cached data."""
-        center_frequency = str(self.center_frequencies[channel]).replace(".", "p")
+        center_frequency = str(self.metadata["center_frequencies"][channel]).replace(".", "p")
         return os.path.join(
             self.cachedir,
-            f"{self.utc_date}_{self.node}_RAWDATA_fs-{self.resampled_fs}Hz_cf-{center_frequency}MHz.ba.pkl",
+            f"{self.metadata["utc_date"].date()}_{self.metadata["node"]}_RAWDATA_fs-{self.resampled_fs}Hz_cf-{center_frequency}MHz.ba.pkl",
         )
 
     def _resample(self, data):
@@ -193,15 +202,7 @@ class Reader:
 
     def get_metadata(self) -> Dict[str, Any]:
         """Return metadata information."""
-        return {
-            "sampling_rate": self.fs,
-            "center_frequencies": self.center_frequencies,
-            "station": self.station,
-            "utc_date": self.utc_date,
-            "lat": self.lat,
-            "lon": self.lon,
-            "grid": self.grid
-        }
+        return self.metadata
 
 if __name__ == "__main__":
     # data_dir = sys.argv[1]

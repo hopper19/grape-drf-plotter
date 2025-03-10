@@ -1,4 +1,7 @@
-# plotter.py
+"""
+Command: 
+@author: Cuong Nguyen
+"""
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
@@ -7,81 +10,73 @@ import os
 import sys
 import argparse
 from reader import Reader
+import datetime
+import solarContext
+import pandas as pd
 
-# mpl.rcParams["font.size"] = 12
-# mpl.rcParams["font.weight"] = "bold"
-# mpl.rcParams["axes.grid"] = True
-# mpl.rcParams["grid.linestyle"] = ":"
-# mpl.rcParams["figure.figsize"] = np.array([15, 8])
-# mpl.rcParams["axes.xmargin"] = 0
+mpl.rcParams['font.size']       = 12
+mpl.rcParams['font.weight']     = 'bold'
+mpl.rcParams['axes.grid']       = True
+mpl.rcParams['axes.titlesize']  = 30
+mpl.rcParams['grid.linestyle']  = ':'
+mpl.rcParams['figure.figsize']  = np.array([15, 8])
+mpl.rcParams['axes.xmargin']    = 0
+mpl.rcParams['legend.fontsize'] = 'xx-large'
 
 class Plotter:
     def __init__(self, data_reader, output_dir="output"):
         self.data_reader = data_reader
         self.metadata = data_reader.get_metadata()
         self.fs = self.data_reader.resampled_fs
-        self.start_index, self.end_index = self.data_reader.start_index, self.data_reader.end_index
-        self.center_frequencies = self.metadata["center_frequencies"]
-        self.station = self.metadata["station"]
-        self.utc_date = self.metadata["utc_date"]
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
-        # plt.tight_layout()
-        # plt.grid()
+        self.event_fname = '{!s}_{!s}_grape2DRF'.format(self.metadata["utc_date"].date(),self.metadata["station"])
 
-    def plot_spectrogram(self, channels=None):
-        # TODO: implement channel selection 
+    def plot_spectrogram(self, channel_indices=None):
+        # TODO: implement channel selection
         """Plot selected channels or all if not specified."""
-        if channels is None:
-            channels = range(len(self.center_frequencies))
+        print(f"Now plotting {self.event_fname}...")
+        if channel_indices is None:
+            channel_indices = range(len(self.metadata["center_frequencies"]))
         else:
-            channels = [int(ch) for ch in channels]
+            channel_indices = [int(ch) for ch in sorted(channel_indices)]
 
         ncols = 1
-        nrows = len(channels)
-        fig = plt.figure(figsize=(10, 4 * nrows))
-        # fig.subplots_adjust(top=0.93)
+        nrows = len(channel_indices)
+        fig = plt.figure(figsize=(22,nrows*5))
         fig.suptitle(
-            f"Grape Narrow Spectrum, {self.utc_date},\n" +
-            f"Lat. {self.metadata['lat']}, Long. {self.metadata['lon']} (Grid{self.metadata['grid']}) " +
-            f"Station: {self.metadata['station']}", fontsize=16
+            f"{self.metadata["station"]} ({self.metadata["city_state"]})\n" +
+            f"Grape 2 Spectrogram for {self.metadata["utc_date"].date()}",
+            size=42
         )
-        # use classic style
-        plt.style.use("classic")
 
-        for ax_inx, cfreq_idx in enumerate(channels, start=1):
+        for i in range(len(channel_indices)):
+            cfreq_idx = channel_indices[::-1][i]
+            ax_inx = i + 1
+            print(f"Plotting {self.metadata["center_frequencies"][cfreq_idx]} MHz...")
             data = self.data_reader.read_data(channel_index=cfreq_idx)
-            print("Fisnihed reading data!")
             ax = fig.add_subplot(nrows, ncols, ax_inx)
             self._plot_ax(
                 data,
                 ax,
-                freq=self.center_frequencies[cfreq_idx],
-                lastrow=ax_inx == len(channels),
+                freq=self.metadata["center_frequencies"][cfreq_idx],
+                lastrow=ax_inx == len(channel_indices),
             )
 
-        plt.xlabel("UTC")
-        # num_ticks = 13  # number of x-ticks
-        # positions = np.linspace(t_spec[0], t_spec[-1], num=num_ticks)
-        # labels = [(i * 24 / (num_ticks - 1)) for i in range(num_ticks)] # TODO: hard coded for 24 hours
-        # plt.xticks(labels)
-
-        # Save the figure
-        fig.tight_layout(rect=[0, 0, 1, 1])  # Leave space for the suptitle
-        event_fname = f"{self.utc_date}_{self.station}_grape2DRF_new.png"
-        png_fpath = os.path.join(self.output_dir, event_fname)
+        fig.tight_layout()
+        png_fpath = os.path.join(self.output_dir, self.event_fname + ".png")
         fig.savefig(png_fpath, bbox_inches="tight")
         print(f"Plot saved to {png_fpath}")
 
     def _plot_ax(self, data, ax, freq, lastrow=False):
         """Plot data on the given axes."""
 
-        ax.set_ylabel("{:.2f}MHz\nDoppler Shift (Hz)".format(freq))
+        ax.set_ylabel("{:.2f}MHz\nDoppler Shift".format(freq))
 
         f, t_spec, Sxx = signal.spectrogram(
             data, fs=self.fs, window="hann", nperseg=int(self.fs / 0.01)
         )
-        Sxx_db = np.log10(Sxx, where=(Sxx > 0)) * 10
+        Sxx_db = np.log10(Sxx) * 10
         f -= self.data_reader.target_bandwidth / 2
         ax.set_ylim(
             - self.data_reader.target_bandwidth / 2, self.data_reader.target_bandwidth / 2
@@ -89,30 +84,57 @@ class Plotter:
         cmap = mpl.colors.LinearSegmentedColormap.from_list(
             " ", ["black", "darkgreen", "green", "yellow", "red"]
         )
-        cax = ax.pcolormesh(t_spec, f, Sxx_db, cmap=cmap)
+        cax = ax.pcolormesh(
+            pd.date_range(
+                start=self.metadata["utc_date"],
+                end=self.metadata["utc_date"] + datetime.timedelta(days=1),
+                periods=len(t_spec),
+            ),
+            f,
+            Sxx_db,
+            cmap=cmap,
+        )
+
+        sts = solarContext.solarTimeseries(
+            self.metadata["utc_date"],
+            self.metadata["utc_date"] + datetime.timedelta(days=1),
+            self.metadata["lat"],
+            self.metadata["lon"],
+        )
+        odct = {'color': 'white', 'lw': 4, 'alpha': 0.75}
+        sts.overlaySolarElevation(ax, **odct)
+        sts.overlayEclipse(ax, **odct)
 
         # Add colorbar
-        cbar = plt.colorbar(cax, ax=ax, orientation='vertical', pad=0.02)
-        cbar.set_label("Power (dB)")
+        # cbar = plt.colorbar(cax, ax=ax, orientation='vertical', pad=0.02)
+        # cbar.set_label("Power (dB)")
 
-        ax.set_xticks([])
-        ax.set_xticklabels([])
+        # Set dynamic x-tick positions for all plots (needed for grid)
+        num_ticks = 13  # number of x-ticks
+        xticks  = ax.get_xticks()
+        positions = pd.date_range(start="2024-04-08", end="2024-04-09", periods=num_ticks)
+        labels = [f"{(i * 24 / (num_ticks - 1)):0.0f}" for i in range(num_ticks)]
+        # labels go from 00:00 to 01:00, ..., to o 00:00
 
-        ax.grid(
-            visible=True,
-            which="both",
-        )
-        # Set dynamic x-tick labels
-        num_ticks = 13 # number of x-ticks
-        positions = np.linspace(t_spec[0], t_spec[-1], num=num_ticks)
-        labels = [f"{(i * 24 / (num_ticks - 1)):0.0f}" for i in range(num_ticks)] # TODO: hard coded for 24 hours
-        ax.set_xticks(positions)
-        ax.set_xticklabels(labels)
+        # # Set tick positions for ALL plots (required for grid lines)
+        ax.set_xticks(xticks)
 
+        # # Only show labels on the bottom plot
+        if lastrow:
+            labels = [mpl.dates.num2date(xtk).strftime("%H:%M") for xtk in xticks]
+            ax.set_xticklabels(labels)
+            ax.set_xlabel("UTC")
+            # Keep tick marks visible
+        else:
+            ax.set_xticklabels([""] * len(xticks))  # Empty labels but keep ticks
+            # Hide the actual tick marks without affecting grid
+            ax.tick_params(axis='x', which='both', length=0)
 
+        # Ensure grid is visible on both axes
+        ax.grid(visible=True, which='both', axis='both')
 
 def main():
-    version = "1.0.1"
+    version = "2.0"
     
     parser = argparse.ArgumentParser(description="Grape2 Spectrogram Generator")
     parser.add_argument(
@@ -120,6 +142,9 @@ def main():
     )
     parser.add_argument(
         "-o", "--output_dir", help="Output directory for plot", required=True
+    )
+    parser.add_argument(
+        "-x", "--clean_cache", action="store_true", help="Clean up cache files after processing"
     )
     parser.add_argument(
         "-v",
@@ -134,7 +159,7 @@ def main():
     data_dir = args.input_dir
     output_dir = args.output_dir
 
-    data_reader = Reader(data_dir)
+    data_reader = Reader(data_dir, cleanup_cache=args.clean_cache)
     plotter = Plotter(data_reader, output_dir=output_dir)
 
     # channels = sys.argv[2:] if len(sys.argv) > 2 else None
