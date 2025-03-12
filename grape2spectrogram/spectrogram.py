@@ -19,8 +19,12 @@ import matplotlib as mpl
 from scipy import signal
 
 # Local imports
-from reader import Reader
-import solarContext
+try:
+    from .reader import Reader
+    from . import solarContext
+except ImportError:
+    from reader import Reader
+    import solarContext
 
 class Plotter:
     """

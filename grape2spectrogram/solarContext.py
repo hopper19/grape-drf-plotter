@@ -6,7 +6,10 @@ import datetime
 import pandas as pd
 import pvlib
 
-import eclipse_calc
+try:
+    from . import eclipse_calc
+except ImportError:
+    import eclipse_calc
 
 class solarTimeseries(object):
     def __init__(self,sTime=None,eTime=None,lat=None,lon=None,dt_minutes=1):
