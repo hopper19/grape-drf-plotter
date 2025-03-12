@@ -19,17 +19,8 @@ import matplotlib as mpl
 from scipy import signal
 
 # Local imports
-from reader import Reader
-import solarContext
-
-mpl.rcParams['font.size']       = 12
-mpl.rcParams['font.weight']     = 'bold'
-mpl.rcParams['axes.grid']       = True
-mpl.rcParams['axes.titlesize']  = 30
-mpl.rcParams['grid.linestyle']  = ':'
-mpl.rcParams['figure.figsize']  = np.array([15, 8])
-mpl.rcParams['axes.xmargin']    = 0
-mpl.rcParams['legend.fontsize'] = 'xx-large'
+from grape2spectrogram.reader import Reader
+from grape2spectrogram import solarContext
 
 class Plotter:
     """
@@ -58,6 +49,19 @@ class Plotter:
         'alpha': 0.75
     }
 
+    # HARC_PLOT configuration
+    HARC_PLOT_CONFIG = {
+        'figure.titlesize': 'xx-large',
+        'axes.titlesize': 'xx-large',
+        'axes.labelsize': 'xx-large',
+        'xtick.labelsize': 'xx-large',
+        'ytick.labelsize': 'xx-large',
+        'legend.fontsize': 'large',
+        'figure.titleweight': 'bold',
+        'axes.titleweight': 'bold',
+        'axes.labelweight': 'bold',
+    }
+
     def __init__(self, data_reader, output_dir="output"):
         """
         Initialize the plotter with a data reader and output directory.
@@ -68,6 +72,8 @@ class Plotter:
         """
         # Apply matplotlib styling
         for key, value in self.PLOT_CONFIG.items():
+            mpl.rcParams[key] = value
+        for key,value in self.HARC_PLOT_CONFIG.items():
             mpl.rcParams[key] = value
             
         self.data_reader = data_reader
@@ -202,10 +208,7 @@ class Plotter:
         # Ensure grid is visible
         ax.grid(visible=True, which='both', axis='both')
 
-def main():
-    """Parse arguments and run the plotter."""
-    version = "2.1"
-    
+def main():    
     parser = argparse.ArgumentParser(description="Grape2 Spectrogram Generator")
     parser.add_argument(
         "-i", "--input_dir", 
@@ -218,27 +221,19 @@ def main():
         required=True
     )
     parser.add_argument(
-        "-x", "--clean_cache", 
+        "-k", "--keep_cache", 
         action="store_true", 
-        help="Clean up cache files after processing"
+        help="Keep cache files after processing (by default, cache is removed)"
     )
     parser.add_argument(
         "-c", "--channels",
         nargs="*",
         help="Specific channel indices to plot (e.g., 0 1 2)"
-    )
-    parser.add_argument(
-        "-v", "--version",
-        action="version",
-        version=f"%(prog)s v{version}",
-        help="Show program version"
-    )
-    
+    )    
     args = parser.parse_args()
-    
     try:
         # Initialize reader and plotter
-        data_reader = Reader(args.input_dir, cleanup_cache=args.clean_cache)
+        data_reader = Reader(args.input_dir, cleanup_cache=not args.keep_cache)
         plotter = Plotter(data_reader, output_dir=args.output_dir)
         
         # Plot with specified channels or all channels

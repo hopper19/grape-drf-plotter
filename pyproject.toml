@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "grape2spectrogram"
+version = "3.2"
+description = "Generates spectrograms from Digital RF files created by Grape 2 receivers"
+authors = ["hopper19 <cuongvnus2001@gmail.com>"]
+readme = "README.md"
+license = "GPL-3.0"
+repository = "https://github.com/hopper19/grape-drf-plotter.git"
+
+[tool.poetry.dependencies]
+python = "^3.12.7"
+numpy = "^2.2.3"
+digital-rf = "^2.6.11"
+pandas = "^2.2.3"
+scipy = "^1.15.2"
+matplotlib = "^3.10.1"
+pvlib = "^0.11.2"
+astropy = "^7.0.1"
+tqdm = "^4.67.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+spectrogram = "grape2spectrogram:main"
+
