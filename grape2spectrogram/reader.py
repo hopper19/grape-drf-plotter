@@ -130,7 +130,7 @@ class Reader:
             logger.info(log_message)
             print(log_message + " This will take some time. Snacks are not included.")
             for channel_index in range(len(self.metadata["center_frequencies"])):
-                log_message = f"Reading DRF rawdata for {self.metadata["center_frequencies"][channel_index]} MHz channel..."
+                log_message = f"Reading DRF rawdata for {self.metadata['center_frequencies'][channel_index]} MHz channel..."
                 logger.info(log_message)
                 print(log_message)
                 raw_data = self._read_rawdata_channel(channel_index)
@@ -179,7 +179,7 @@ class Reader:
         center_frequency = str(self.metadata["center_frequencies"][channel]).replace(".", "p")
         return os.path.join(
             self.cachedir,
-            f"{self.metadata["utc_date"].date()}_{self.metadata["node"]}_RAWDATA_fs-{self.resampled_fs}Hz_cf-{center_frequency}MHz.ba.pkl",
+            f"{self.metadata['utc_date'].date()}_{self.metadata['node']}_RAWDATA_fs-{self.resampled_fs}Hz_cf-{center_frequency}MHz.ba.pkl",
         )
 
     def _resample(self, data):

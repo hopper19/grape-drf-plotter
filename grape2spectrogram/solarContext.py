@@ -6,7 +6,7 @@ import datetime
 import pandas as pd
 import pvlib
 
-from grape2spectrogram import eclipse_calc
+import eclipse_calc
 
 class solarTimeseries(object):
     def __init__(self,sTime=None,eTime=None,lat=None,lon=None,dt_minutes=1):

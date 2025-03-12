@@ -19,8 +19,8 @@ import matplotlib as mpl
 from scipy import signal
 
 # Local imports
-from grape2spectrogram.reader import Reader
-from grape2spectrogram import solarContext
+from reader import Reader
+import solarContext
 
 class Plotter:
     """
@@ -157,6 +157,7 @@ class Plotter:
         
         # Convert to dB scale
         Sxx_db = np.log10(Sxx) * 10
+        print("Min/Max dB: ",round(Sxx_db.min()), round(Sxx_db.max()))
         
         # Center frequencies around zero
         f -= self.data_reader.target_bandwidth / 2
@@ -178,7 +179,7 @@ class Plotter:
         )
         
         # Plot spectrogram
-        cax = ax.pcolormesh(time_range, f, Sxx_db, cmap=cmap)
+        cax = ax.pcolormesh(time_range, f, Sxx_db, cmap=cmap, vmin=-80, vmax=100)
 
         # Add solar context
         sts = solarContext.solarTimeseries(
@@ -207,6 +208,13 @@ class Plotter:
 
         # Ensure grid is visible
         ax.grid(visible=True, which='both', axis='both')
+
+    def overlay_colorbar(self):
+        """
+        Overlay a colorbar on the spectrogram plot.
+        """
+        pass
+
 
 def main():    
     parser = argparse.ArgumentParser(description="Grape2 Spectrogram Generator")
