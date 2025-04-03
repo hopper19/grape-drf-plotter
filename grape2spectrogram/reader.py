@@ -31,7 +31,7 @@ import digital_rf as drf
 import math
 import numpy as np
 from tqdm import tqdm
-import datetime
+from datetime import datetime, timezone
 import pytz
 import pickle
 import logging
@@ -61,7 +61,13 @@ class Reader:
         self.dmr = drf.DigitalMetadataReader(os.path.join(datadir, "ch0", "metadata"))
         self.fs = int(self.dmr.get_samples_per_second())
         self.start_index, self.end_index = self.dro.get_bounds("ch0")
-        self.utc_date = self._get_initial_date()
+        self.utc_date = datetime.fromtimestamp(
+            self.start_index / self.fs, tz=timezone.utc
+        ).replace(hour=0, minute=0, second=0, microsecond=0)
+        self.midnight_index = int(self.utc_date.timestamp() * self.fs)
+        # print("Continuous blocks:", self.dro.get_continuous_blocks(self.start_index, self.start_index + 86400*self.fs, "ch0"))
+        # exit()
+        # self.utc_date = self._get_initial_date()
         self.metadata = {}
         self._extract_metadata()
 
@@ -70,7 +76,6 @@ class Reader:
         self.cachedir = os.path.join(source_dir, cachedir)
         os.makedirs(self.cachedir, exist_ok=True)
         self._ensure_data_cached()
-
 
         atexit.register(self._cleanup)
 
@@ -101,7 +106,6 @@ class Reader:
                 self.metadata["sampling_rate"] = header_meta["ad_sample_rate"]
             else:
                 self.metadata["sampling_rate"] = self.dmr.get_samples_per_second()
-
 
         except Exception as e:
             error_message = f"Error extracting metadata: {e}"
@@ -141,31 +145,52 @@ class Reader:
 
     def _read_rawdata_channel(self, channel_index: int):
         """Read raw data and store it using np.memmap to reduce memory usage."""
-        cont_data_arr = self.dro.get_continuous_blocks(
-            self.start_index, self.end_index, "ch0"
+        # cont_data_arr = self.dro.get_continuous_blocks(
+        #     self.start_index, self.end_index, "ch0"
+        # )
+        # batch_size_samples = self.fs * 60 * self.batch_size_mins
+        # read_iters = math.ceil((self.end_index - self.start_index) / batch_size_samples)
+
+        # start_sample = list(cont_data_arr.keys())[0]
+        # memmap_file = f"{self.cachedir}/raw_data_channel_{channel_index}.memmap"
+        # memmap_array = np.memmap(
+        #     memmap_file,
+        #     dtype="float32",
+        #     mode="w+",
+        #     shape=(self.end_index - self.start_index + 1,),
+        # )
+
+        # for i in tqdm(range(read_iters), desc="Reading Batches"):
+        #     batch = self.dro.read_vector(
+        #         start_sample + i * batch_size_samples,
+        #         batch_size_samples,
+        #         "ch0",
+        #         channel_index,
+        #     )
+        #     memmap_array[i * batch_size_samples : (i + 1) * batch_size_samples] = batch
+
+        # return memmap_array
+        cont_blocks = self.dro.get_continuous_blocks(
+            self.midnight_index, self.midnight_index + self.fs * 3600 * 24, "ch0"
         )
         batch_size_samples = self.fs * 60 * self.batch_size_mins
-        read_iters = math.ceil((self.end_index - self.start_index) / batch_size_samples)
+        data = np.full(self.fs * 3600 * 24, np.nan, dtype=np.float32)  # Preallocate with NaNs
 
-        start_sample = list(cont_data_arr.keys())[0]
-        memmap_file = f"{self.cachedir}/raw_data_channel_{channel_index}.memmap"
-        memmap_array = np.memmap(
-            memmap_file,
-            dtype="float32",
-            mode="w+",
-            shape=(self.end_index - self.start_index + 1,),
-        )
-
-        for i in tqdm(range(read_iters), desc="Reading Batches"):
-            batch = self.dro.read_vector(
-                start_sample + i * batch_size_samples,
-                batch_size_samples,
-                "ch0",
-                channel_index,
-            )
-            memmap_array[i * batch_size_samples : (i + 1) * batch_size_samples] = batch
-
-        return memmap_array
+        for start_sample, block_size in tqdm(cont_blocks.items(), desc="Reading Batches"):
+            if block_size < batch_size_samples:
+                data_arr_block_idx = start_sample - self.midnight_index
+                data[data_arr_block_idx : data_arr_block_idx + block_size] = (
+                    self.dro.read_vector(start_sample, block_size, "ch0", channel_index)
+                )
+            else:
+                # Read in chunks if the block is larger than batch_size_samples
+                for i in range(0, block_size, batch_size_samples):
+                    chunk_size = min(batch_size_samples, block_size - i)
+                    data_arr_block_idx = start_sample - self.midnight_index + i
+                    data[data_arr_block_idx : data_arr_block_idx + chunk_size] = (
+                        self.dro.read_vector(start_sample + i, chunk_size, "ch0", channel_index)
+                    )
+        return data
 
     def _cache_data(self, path: str, data):
         """Cache the data to a pickle file."""
