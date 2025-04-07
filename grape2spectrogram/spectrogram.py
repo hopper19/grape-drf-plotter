@@ -37,6 +37,7 @@ class Plotter:
     Handles the visualization of frequency data across time, with solar
     context information overlaid.
     """
+
     PLOT_CONFIG = {
         "font.size": 12,
         "font.weight": "bold",
@@ -130,8 +131,10 @@ class Plotter:
 
             # Plot the data
             self._plot_ax(
+                data,
                 ax,
-                cfreq_idx=cfreq_idx
+                freq=self.metadata["center_frequencies"][cfreq_idx],
+                lastrow=(plot_position == len(channel_indices)),
             )
 
         # Save the figure
@@ -140,7 +143,7 @@ class Plotter:
         fig.savefig(png_fpath, bbox_inches="tight")
         print(f"Plot saved to {png_fpath}")
 
-    def _plot_ax(self, ax, cfreq_idx):
+    def _plot_ax(self, data, ax, freq, lastrow=False):
         """
         Plot spectrogram data on the given axes.
 
@@ -150,20 +153,19 @@ class Plotter:
             freq: Center frequency in MHz
             lastrow: Whether this is the bottom plot (for x-axis labels)
         """
-        freqs = self.metadata["center_frequencies"]
         # Set y-axis label
-        ax.set_ylabel(f"{freqs[cfreq_idx]:.2f}MHz\nDoppler Shift (Hz)")
+        ax.set_ylabel(f"{freq:.2f}MHz\nDoppler Shift (Hz)")
 
         # Generate spectrogram
-        data =0
         nperseg = int(self.fs / 0.01)  # 10ms segments
         f, t_spec, Sxx = signal.spectrogram(
             data, fs=self.fs, window="hann", nperseg=nperseg
         )
+        print(data.shape, t_spec.shape, f.shape, Sxx.shape)
 
         # Convert to dB scale
         Sxx_db = np.log10(Sxx) * 10
-        print("Min/Max dB:", round(Sxx_db.min()), round(Sxx_db.max()))
+        print("Min/Max dB:", np.nanmin(Sxx_db), np.nanmax(Sxx_db))
 
         # Center frequencies around zero
         f -= self.data_reader.target_bandwidth / 2
@@ -204,7 +206,7 @@ class Plotter:
         ax.set_xticks(xticks)
 
         # Only show x-axis labels on the bottom plot
-        if cfreq_idx == len(freqs) - 1:
+        if lastrow:
             labels = [mpl.dates.num2date(xtk).strftime("%H:%M") for xtk in xticks]
             ax.set_xticklabels(labels)
             ax.set_xlabel("UTC")

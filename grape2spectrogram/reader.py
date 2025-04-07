@@ -144,52 +144,39 @@ class Reader:
                 )
 
     def _read_rawdata_channel(self, channel_index: int):
-        """Read raw data and store it using np.memmap to reduce memory usage."""
-        # cont_data_arr = self.dro.get_continuous_blocks(
-        #     self.start_index, self.end_index, "ch0"
-        # )
-        # batch_size_samples = self.fs * 60 * self.batch_size_mins
-        # read_iters = math.ceil((self.end_index - self.start_index) / batch_size_samples)
-
-        # start_sample = list(cont_data_arr.keys())[0]
-        # memmap_file = f"{self.cachedir}/raw_data_channel_{channel_index}.memmap"
-        # memmap_array = np.memmap(
-        #     memmap_file,
-        #     dtype="float32",
-        #     mode="w+",
-        #     shape=(self.end_index - self.start_index + 1,),
-        # )
-
-        # for i in tqdm(range(read_iters), desc="Reading Batches"):
-        #     batch = self.dro.read_vector(
-        #         start_sample + i * batch_size_samples,
-        #         batch_size_samples,
-        #         "ch0",
-        #         channel_index,
-        #     )
-        #     memmap_array[i * batch_size_samples : (i + 1) * batch_size_samples] = batch
-
-        # return memmap_array
+        """Read raw data from DRF for a specific channel."""
+        # Get continuous data blocks for the entire day
         cont_blocks = self.dro.get_continuous_blocks(
             self.midnight_index, self.midnight_index + self.fs * 3600 * 24, "ch0"
         )
-        batch_size_samples = self.fs * 60 * self.batch_size_mins
-        data = np.full(self.fs * 3600 * 24, np.nan, dtype=np.float32)  # Preallocate with NaNs
 
-        for start_sample, block_size in tqdm(cont_blocks.items(), desc="Reading Batches"):
-            if block_size < batch_size_samples:
-                data_arr_block_idx = start_sample - self.midnight_index
-                data[data_arr_block_idx : data_arr_block_idx + block_size] = (
-                    self.dro.read_vector(start_sample, block_size, "ch0", channel_index)
-                )
-            else:
-                # Read in chunks if the block is larger than batch_size_samples
-                for i in range(0, block_size, batch_size_samples):
-                    chunk_size = min(batch_size_samples, block_size - i)
-                    data_arr_block_idx = start_sample - self.midnight_index + i
-                    data[data_arr_block_idx : data_arr_block_idx + chunk_size] = (
-                        self.dro.read_vector(start_sample + i, chunk_size, "ch0", channel_index)
+        # Preallocate array for full day of data
+        data = np.full(self.fs * 3600 * 24, np.nan, dtype=np.float32)
+
+        # Set up progress tracking
+        total_samples = sum(cont_blocks.values())
+        with tqdm(total=total_samples, unit="sample", desc="Reading Data") as pbar:
+            # Process each continuous block
+            for start_sample, block_size in cont_blocks.items():
+                # Calculate array index for this block
+                data_idx = start_sample - self.midnight_index
+
+                # Read in manageable chunks (30-minute chunks by default)
+                chunk_size = self.fs * 60 * self.batch_size_mins
+
+                # Process block in chunks if needed
+                for offset in range(0, block_size, chunk_size):
+                    # Determine this chunk's size
+                    read_size = min(chunk_size, block_size - offset)
+
+                    # Read data and place in the right position in the array
+                    data[data_idx + offset : data_idx + offset + read_size] = (
+                        self.dro.read_vector(
+                            start_sample + offset, read_size, "ch0", channel_index
+                        )
                     )
+                    pbar.update(read_size)
+
         return data
 
     def _cache_data(self, path: str, data):
@@ -210,25 +197,47 @@ class Reader:
     def _resample(self, data):
         decimation_factor = math.ceil(self.fs / self.resampled_fs)
         # Process data in chunks to save memory
-        chunk_size = min(10**6, len(data))  # Adjust chunk size based on your system's memory limits
+        chunk_size = min(10**6, len(data))
+
+        # Use an overlap large enough to eliminate boundary effects from filtering
+        # This is based on the typical filter length used in resampling
+        overlap = 10 * decimation_factor
+
         resampled_chunks = []
 
-        for i in range(0, len(data), chunk_size):
-            chunk = data[i:i + chunk_size]
-            t_chunk = np.arange(i, i + len(chunk)) / self.fs
+        for i in range(0, len(data), chunk_size - overlap):
+            # Extract chunk with overlap
+            start_idx = max(0, i)
+            end_idx = min(len(data), i + chunk_size)
+            chunk = data[start_idx:end_idx]
 
-            # Use broadcasting to avoid intermediate large arrays
+            # Calculate time for this chunk
+            t_chunk = np.arange(start_idx, end_idx) / self.fs
+
+            # Frequency shifting
             cos_wave = np.cos(2 * np.pi * (self.f_c - self.target_bandwidth / 2) * t_chunk)
             shifted_chunk = chunk * cos_wave
 
-            # Use FIR filter for memory-efficient resampling
-            resampled_chunk = signal.decimate(
-                shifted_chunk, decimation_factor, ftype="fir", zero_phase=True
-            )
-            resampled_chunks.append(resampled_chunk)
+            # Use resample_poly instead of decimate for better quality and control
+            resampled_chunk = signal.resample_poly(shifted_chunk, 1, decimation_factor)
 
-        # Concatenate chunks at the end to minimize memory footprint
-        return np.concatenate(resampled_chunks)
+            # Determine which portion to keep (exclude boundaries except for first/last chunks)
+            if start_idx == 0:  # First chunk
+                valid_start = 0
+            else:
+                valid_start = overlap // (2 * decimation_factor)
+
+            if end_idx == len(data):  # Last chunk
+                valid_end = len(resampled_chunk)
+            else:
+                valid_end = len(resampled_chunk) - overlap // (2 * decimation_factor)
+
+            # Keep only the valid portion
+            if valid_end > valid_start:
+                resampled_chunks.append(resampled_chunk[valid_start:valid_end])
+
+        # Concatenate all valid portions
+        return np.concatenate(resampled_chunks) if resampled_chunks else np.array([])
 
     def read_data(self, channel_index: int) -> np.ndarray:
         """ Read the cached datata for the specified channel. """
@@ -238,6 +247,7 @@ class Reader:
     def get_metadata(self) -> Dict[str, Any]:
         """Return metadata information."""
         return self.metadata
+
 
 if __name__ == "__main__":
     # data_dir = sys.argv[1]

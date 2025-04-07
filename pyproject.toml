@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "grape2spectrogram"
-version = "5.1.1"
+version = "5.1.2"
 description = "Generates spectrograms from Digital RF files created by Grape 2 receivers"
 authors = ["hopper19 <cuongvnus2001@gmail.com>"]
 readme = "README.md"
