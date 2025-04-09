@@ -4,6 +4,7 @@ Grape 2 Spectrogram Generator
 Generates spectrograms from Digital RF files created by Grape 2 receivers.
 
 TODO: make eclipse and solar overlay optional
+TODO: make the output filename more meaningful
 
 @author: Cuong Nguyen
 """
